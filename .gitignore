@@ -1,0 +1,47 @@
+# ---------------------------------------------
+# 1. AMBIENTES VIRTUAIS E PACOTES
+# ---------------------------------------------
+# Ignora a pasta do ambiente virtual do seu Linux
+/venv/
+# Ignora o cache de pacotes Python
+__pycache__/
+*.pyc
+# Arquivos gerados por pip-tools
+# *.egg-info/
+# .tox/
+
+# ---------------------------------------------
+# 2. BANCO DE DADOS E ARQUIVOS DE DADOS LOCAIS
+# ---------------------------------------------
+# Seu banco de dados SQLite (mantenha-o local)
+matriculas.db
+# Arquivos de log ou exportação gerados
+*.log
+*.csv
+*.xlsx
+# Arquivos PDF gerados localmente (ex: Ficha_Matricula_Antonio_Fernan...)
+Ficha_Matricula_*.pdf
+
+# ---------------------------------------------
+# 3. PYINSTALLER E DOCKER (Compilação)
+# ---------------------------------------------
+# Diretórios gerados pelo PyInstaller
+/build/
+/dist/
+# O arquivo spec pode ser versionado, mas os temporários devem ser ignorados
+*.spec
+.pyi
+
+# ---------------------------------------------
+# 4. CONFIGURAÇÕES E CACHE DO EDITOR (VS Code)
+# ---------------------------------------------
+.vscode/
+# Arquivos de cache do VS Code, se existirem
+*.code-workspace
+
+# ---------------------------------------------
+# 5. DIVERSOS
+# ---------------------------------------------
+# Arquivos temporários do sistema
+*~
+*.swp
