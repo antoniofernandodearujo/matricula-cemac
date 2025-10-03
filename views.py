@@ -14,6 +14,7 @@ from utils import format_date
 
 # Componentes de Domínio/Lógica Separados
 try:
+    # Atenção: database.py deve conter o método update_status_matricula
     from database import DatabaseManager
     from utils import (
         calcular_turma_cemac, 
@@ -194,7 +195,7 @@ class FormsFrame(ttk.Frame):
             "endereco": tk.StringVar(), 
             "mae": tk.StringVar(), "pai": tk.StringVar(), 
             "tel_mae": tk.StringVar(), "tel_pai": tk.StringVar(),
-            "cpf_resp": tk.StringVar(), 
+            "cpf_aluno": tk.StringVar(), # <-- CORRIGIDO: CPF do Aluno (era cpf_resp)
             "resp_legal": tk.StringVar(), 
             "tel_resp_emerg": tk.StringVar(), 
             "alergia": tk.StringVar(value="Não"), 
@@ -210,6 +211,11 @@ class FormsFrame(ttk.Frame):
 
         # --- DADOS PESSOAIS (Aluno) ---
         self._create_label_entry(form_frame, row, "Nome da Criança:", self.vars["nome"]); row += 1
+        
+        # CPF do Aluno (Opcional)
+        cpf_entry = self._create_label_entry(form_frame, row, "CPF do Aluno (Opcional):", self.vars["cpf_aluno"])
+        cpf_entry.bind('<FocusOut>', lambda e: format_cpf(cpf_entry)); row += 1
+        
         self._create_label_entry(form_frame, row, "Endereço Completo:", self.vars["endereco"]); row += 1
 
         # Data, Idade e Turma
@@ -228,9 +234,6 @@ class FormsFrame(ttk.Frame):
         tel_pai_entry.bind('<FocusOut>', lambda e: format_phone(tel_pai_entry)); row += 1
         
         self._create_label_entry(form_frame, row, "Responsável Legal:", self.vars["resp_legal"]); row += 1
-        
-        cpf_entry = self._create_label_entry(form_frame, row, "CPF do Responsável:", self.vars["cpf_resp"])
-        cpf_entry.bind('<FocusOut>', lambda e: format_cpf(cpf_entry)); row += 1
         
         tel_emerg_entry = self._create_label_entry(form_frame, row, "Tel. Emergência:", self.vars["tel_resp_emerg"])
         tel_emerg_entry.bind('<FocusOut>', lambda e: format_phone(tel_emerg_entry)); row += 1
@@ -294,7 +297,6 @@ class FormsFrame(ttk.Frame):
         data_entry = ttk.Entry(data_frame, textvariable=self.vars["data_nasc"], width=15)
         data_entry.pack(side=tk.LEFT)
         
-        # --- LINHA CORRIGIDA AQUI ---
         # 1. Primeiro formata a data
         # 2. Depois atualiza a turma (que agora encontrará o formato correto)
         data_entry.bind('<FocusOut>', lambda e: (format_date(data_entry), self._update_turma_and_idade())); 
@@ -368,7 +370,6 @@ class FormsFrame(ttk.Frame):
             "Nome Mãe": self.vars["mae"].get().strip(),
             "Tel. Mãe": self.vars["tel_mae"].get().strip(),
             "Responsável Legal": self.vars["resp_legal"].get().strip(),
-            "CPF do Responsável": self.vars["cpf_resp"].get().strip(),
             "Método Pagto": self.vars["metodo_pagamento"].get().strip()
         }
         
@@ -386,14 +387,19 @@ class FormsFrame(ttk.Frame):
             messagebox.showerror("Erro de Validação", "Verifique a data de nascimento. Turma sugerida inválida ou fora da faixa etária.")
             return
 
-        # Verifica se o CPF está no formato ##.###.###-##, mas permite se for vazio, já que é opcional se o responsável for a mãe/pai já listado.
-        # No seu código, você o listou como obrigatório (campos_obg), então vamos reforçar a validação:
-        if not re.fullmatch(r'\d{3}\.\d{3}\.\d{3}\-\d{2}', campos_obg["CPF do Responsável"]):
-             messagebox.showwarning("Atenção", "Formato do CPF do responsável incorreto. Use ###.###.###-##.")
+        # --- VALIDAÇÃO DO CPF DO ALUNO (NÃO OBRIGATÓRIO) ---
+        cpf_aluno = self.vars["cpf_aluno"].get().strip()
+        
+        # Se preenchido, deve estar no formato correto
+        if cpf_aluno and not re.fullmatch(r'\d{3}\.\d{3}\.\d{3}\-\d{2}', cpf_aluno):
+             messagebox.showwarning("Atenção", "Formato do CPF do Aluno incorreto. Use ###.###.###-##, ou deixe o campo vazio.")
              return 
 
         # --- CAPTURAR DATA ATUAL DA MATRÍCULA ---
         data_matricula = date.today().strftime('%d/%m/%Y')
+        
+        # --- Tratamento de CPF vazio para salvar no DB ---
+        cpf_aluno_db = cpf_aluno if cpf_aluno else "Não Informado"
 
         # --- PREPARAÇÃO E INSERÇÃO DE DADOS (16 CAMPOS) ---
         try:
@@ -410,7 +416,7 @@ class FormsFrame(ttk.Frame):
                 self.vars["pai"].get().strip(), # Pode ser vazio
                 campos_obg["Tel. Mãe"], 
                 self.vars["tel_pai"].get().strip(), # Pode ser vazio
-                campos_obg["CPF do Responsável"], 
+                cpf_aluno_db,                     # <-- CAMPO CPF DO ALUNO (ÍNDICE 10)
                 campos_obg["Responsável Legal"], 
                 self.vars["tel_resp_emerg"].get().strip(), 
                 self.vars["alergia"].get().strip() if self.vars["alergia"].get().strip() else "Não", 
@@ -639,7 +645,8 @@ class ListFrame(ttk.Frame):
             "ID": data[0], "Nome": data[1], "DataNasc": data[2], "Turma": data[3], 
             "Idade": data[4], "Endereco": data[5],
             "NomeMae": data[6], "NomePai": data[7], "TelMae": data[8], "TelPai": data[9], 
-            "CPFRM": data[10], "RespLegal": data[11],
+            "CPFAluno": data[10],           # <--- CORRIGIDO PARA CPF DO ALUNO
+            "RespLegal": data[11],
             "TelEmerg": data[12], 
             "Alergia": data[13], "ProbMed": data[14], 
             "PagtoMetodo": data[15],       
@@ -689,26 +696,36 @@ class ListFrame(ttk.Frame):
                    command=lambda: self._finalizar_confirmacao(modal, aluno_id, aluno_data['PagtoMetodo'])).pack(pady=20)
 
 
-    def _finalizar_confirmacao(self, modal, aluno_id, metodo_pagto):
-        """Atualiza o status final da matrícula no banco de dados."""
-        pagamento_ok = self.var_pagamento.get()
-        assinatura_ok = self.var_assinatura.get()
+    def _finalizar_confirmacao(self, modal, aluno_id, metodo_pagamento):
+        """Salva os novos status de pagamento e assinatura no DB e efetiva a matrícula."""
         
-        if pagamento_ok == 0 or assinatura_ok == 0:
-            messagebox.showwarning("Atenção", "É necessário confirmar o pagamento e a assinatura para efetivar a matrícula.")
-            return
-
-        # Chamada ao método do DB para atualização
-        if self.db.update_status_matricula(aluno_id, pagamento_ok, assinatura_ok, metodo_pagto):
-            messagebox.showinfo("Sucesso", f"Matrícula Efetivada! (Pagamento: {metodo_pagto})")
-            self.load_alunos() 
-            modal.destroy()
+        pagto_status = self.var_pagamento.get() # 0 ou 1
+        assinatura_status = self.var_assinatura.get() # 0 ou 1
+        
+        # Determina o status final da matrícula
+        if pagto_status == 1 and assinatura_status == 1:
+            novo_status = 'Matrícula Efetivada'
         else:
-            messagebox.showerror("Erro", "Falha ao atualizar o status da matrícula no banco.")
+            novo_status = 'Pendente'
 
+        try:
+            # Requer que DatabaseManager tenha o método 'update_status_matricula'
+            if self.db.update_status_matricula(aluno_id, pagto_status, assinatura_status, novo_status, metodo_pagamento):
+                messagebox.showinfo("Sucesso", f"Status de Matrícula (ID: {aluno_id}) atualizado para: {novo_status}.")
+                
+                modal.destroy()
+                self.load_alunos() # Recarrega a lista para mostrar o novo status
+            else:
+                messagebox.showerror("Erro de DB", "Falha ao atualizar o status da matrícula no banco de dados.")
+                
+        except Exception as e:
+            messagebox.showerror("Erro Crítico", f"Erro ao finalizar confirmação: {e}")
+            
+        modal.grab_release()
 
+    
     def _imprimir_ficha(self):
-        """Gera um PDF com os dados completos do aluno selecionado."""
+        """Gera um PDF com a ficha de matrícula do aluno selecionado, com layout organizado."""
         aluno_id = self._get_selected_aluno_id()
         if not aluno_id: return
         
@@ -722,29 +739,19 @@ class ListFrame(ttk.Frame):
         )
         if not file_path:
             return 
-        
-        # --- Configuração das Imagens (USANDO CAMINHO DO ARQUIVO) ---
+            
+        # --- Configuração dos caminhos de imagem ---
         escudo_path = "escudo.png"
         logo_path = "logo.jpg"
-        
-        # Variáveis booleanas para controle, não mais buffers BytesIO
         escudo_disponivel = os.path.exists(escudo_path)
         logo_disponivel = os.path.exists(logo_path)
         
-        if not escudo_disponivel or not logo_disponivel:
-            print("AVISO: Arquivos de logo/escudo não encontrados. O PDF será gerado sem imagens.")
-
-
         try:
             c = canvas.Canvas(file_path, pagesize=A4)
             width, height = A4
-            y_pos = height - 100 
             
             # --- CABEÇALHO (Logos e Info da Escola) ---
-            
-            # AGORA PASSAMOS O CAMINHO (str) DIRETAMENTE PARA drawImage
             if escudo_disponivel: 
-                # Certifique-se de que as dimensões são adequadas
                 c.drawImage(escudo_path, 50, height - 90, width=60, height=75) 
             if logo_disponivel: 
                 c.drawImage(logo_path, width - 110, height - 90, width=80, height=80) 
@@ -760,16 +767,17 @@ class ListFrame(ttk.Frame):
             
             # Informação de Matrícula/Emissão
             c.setFont("Helvetica-Bold", 12)
-            c.drawCentredString(width/2, height - 110, "Ficha de Matrícula - 2026")
+            c.drawCentredString(width/2, height - 110, f"Ficha de Matrícula - {date.today().year}")
             c.setFont("Helvetica", 10)
-            c.drawCentredString(width/2, height - 125, f"Emitido em {date.today().strftime('%d/%m/%Y')}")
+            c.drawCentredString(width/2, height - 125, f"Data de Emissão: {date.today().strftime('%d/%m/%Y')}")
 
-            y_pos = height - 180 # Ajusta a posição inicial após o novo cabeçalho
+            y_pos = height - 180 
             
             # Formatação de campos vazios/padrão
             alergia = aluno_data['Alergia'] if aluno_data['Alergia'] not in ('Não', '') else 'Nenhuma'
             prob_med = aluno_data['ProbMed'] if aluno_data['ProbMed'] not in ('Não', '') else 'Nenhum'
-            
+            cpf_aluno = aluno_data['CPFAluno'] if aluno_data['CPFAluno'] not in ('Não Informado', '') else 'Não Informado'
+
             # 1. DADOS DO ALUNO
             c.setFont("Helvetica-Bold", 12)
             c.drawString(50, y_pos, "1. DADOS DO ALUNO:")
@@ -781,6 +789,9 @@ class ListFrame(ttk.Frame):
             y_pos -= 18
             c.drawString(50, y_pos, f"Endereço: {aluno_data['Endereco']}")
             c.drawString(350, y_pos, f"Turma / Ano: {aluno_data['Turma']}")
+            y_pos -= 18
+            # CPF DO ALUNO
+            c.drawString(50, y_pos, f"CPF do Aluno: {cpf_aluno}") 
             y_pos -= 25
             
             # 2. DADOS DOS RESPONSÁVEIS
@@ -789,19 +800,17 @@ class ListFrame(ttk.Frame):
             y_pos -= 18
             
             c.setFont("Helvetica", 11)
+            c.drawString(50, y_pos, f"Responsável Legal: {aluno_data['RespLegal']}")
+            c.drawString(350, y_pos, f"Tel. Emergência: {aluno_data['TelEmerg']}")
+            y_pos -= 18
             c.drawString(50, y_pos, f"Nome da Mãe: {aluno_data['NomeMae']} - Tel: {aluno_data['TelMae']}")
             y_pos -= 18
             c.drawString(50, y_pos, f"Nome do Pai: {aluno_data['NomePai']} - Tel: {aluno_data['TelPai']}")
-            y_pos -= 18
-            c.drawString(50, y_pos, f"Responsável Legal: {aluno_data['RespLegal']}")
-            c.drawString(350, y_pos, f"CPF: {aluno_data['CPFRM']}")
-            y_pos -= 18
-            c.drawString(50, y_pos, f"Telefone Emergência: {aluno_data['TelEmerg']}")
             y_pos -= 25
          
-            # 3. SAÚDE E MATRÍCULA
+            # 3. INFORMAÇÕES ADICIONAIS
             c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y_pos, "3. SAÚDE E MATRÍCULA:")
+            c.drawString(50, y_pos, "3. INFORMAÇÕES ADICIONAIS:")
             y_pos -= 18
             
             c.setFont("Helvetica", 11)
@@ -813,45 +822,32 @@ class ListFrame(ttk.Frame):
             c.drawString(350, y_pos, f"Status Matrícula: {aluno_data['MatriculaStatus']}")
             y_pos -= 50
             
-            # --- 4. ASSINATURAS (Verticais e Centralizadas) ---
+            # --- 4. ASSINATURAS (Centralizadas) ---
             c.setFont("Helvetica-Bold", 12)
             c.drawString(50, y_pos, "4. ASSINATURAS:")
             y_pos -= 30
             
-            # Ponto central horizontal da página
             PAGE_CENTER_X = width / 2 
-            # Largura da linha para centralização (pode ser ajustada)
             LINE_WIDTH = 300 
-            # Offset do texto em relação à linha
             TEXT_OFFSET = 10 
-            # Espaço entre as assinaturas (20 é o espaço adicional ao y_pos padrão)
-            SPACE_BETWEEN_SIGNS = 175
+            SPACE_BETWEEN_SIGNS = 120 
 
-            # Coordenadas da linha: (center_x - metade_largura) até (center_x + metade_largura)
             line_x_start = PAGE_CENTER_X - (LINE_WIDTH / 2)
             line_x_end = PAGE_CENTER_X + (LINE_WIDTH / 2)
             
-            # -----------------------------------------------------
-            # 1. Assinatura do Responsável Legal (Topo)
-            # -----------------------------------------------------
-            
-            # Linha horizontal para assinatura do Responsável
+            # 1. Assinatura do Responsável Legal 
             c.line(line_x_start, y_pos, line_x_end, y_pos) 
             c.setFont("Helvetica", 10)
             c.drawCentredString(PAGE_CENTER_X, y_pos - TEXT_OFFSET, f"Assinatura do Responsável Legal: {aluno_data['RespLegal']}")
             
-            y_pos -= SPACE_BETWEEN_SIGNS # Aumenta o espaço para a próxima linha
+            y_pos -= SPACE_BETWEEN_SIGNS 
             
-            # -----------------------------------------------------
-            # 2. Espaço para Assinatura do Diretor (Base)
-            # -----------------------------------------------------
-            
-            # Linha horizontal para assinatura do Diretor
+            # 2. Espaço para Assinatura da Escola 
             c.line(line_x_start, y_pos, line_x_end, y_pos)
             c.setFont("Helvetica", 10)
-            c.drawCentredString(PAGE_CENTER_X, y_pos - TEXT_OFFSET, "Assinatura do Diretor: Antonio Claudio da Silva")
+            c.drawCentredString(PAGE_CENTER_X, y_pos - TEXT_OFFSET, "Assinatura da Escola (Diretora/Coordenadora)")
             
-            y_pos -= 40 # Move o cursor para o rodapé
+            y_pos -= 40
 
             # --- RODAPÉ DA ESCOLA (Fixo na parte inferior) ---
             c.setFont("Helvetica", 8)
@@ -865,4 +861,4 @@ class ListFrame(ttk.Frame):
 
         except Exception as e:
             # Captura erros gerais (como problemas de fonte ou outras falhas do reportlab)
-            messagebox.showerror("Erro de Impressão", f"Falha ao gerar o PDF. Verifique se o caminho do arquivo está correto e as bibliotecas estão instaladas. Erro: {e}")
+            messagebox.showerror("Erro de Impressão", f"Falha ao gerar o PDF. Verifique se as fontes 'Helvetica' estão disponíveis e se os arquivos de logo (escudo.png/logo.jpg) estão na pasta. Erro: {e}")

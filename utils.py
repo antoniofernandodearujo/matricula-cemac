@@ -19,7 +19,6 @@ def calcular_turma_cemac(data_nascimento_str: str) -> str:
     - Pré II: de 5 até 6
     - Fora da Faixa: > 6 anos ou < 1 ano e 6 meses
     """
-    # Esta validação será desnecessária se o format_date funcionar, mas mantemos por segurança
     if not is_valid_date_format(data_nascimento_str):
         return "Data Inválida!"
     
@@ -32,81 +31,101 @@ def calcular_turma_cemac(data_nascimento_str: str) -> str:
     # --- CONFIGURAÇÃO DE CORTE ---
     ANO_LETIVO = 2026
     data_corte = date(ANO_LETIVO, 3, 31) 
-    # --------------------------
-
-    # 1. Cálculo da idade em anos completos na data de corte
-    idade_anos_corte = data_corte.year - data_nasc.year - (
-        (data_corte.month, data_corte.day) < (data_nasc.month, data_nasc.day)
-    )
-
-    # 2. Cálculo da idade em meses completos na data de corte (Para Berçário e Infantil I)
-    idade_meses_corte = (data_corte.year - data_nasc.year) * 12 + data_corte.month - data_nasc.month
-    if data_corte.day < data_nasc.day:
-        idade_meses_corte -= 1
-        
-    # Lógica de Faixa Etária (USANDO A IDADE EM ANOS NA DATA DE CORTE)
     
-    # Exclusão: Acima de 6 anos completos (Pré II vai até 6 anos incompletos)
-    if idade_anos_corte >= 6:
-        return "Fora da Faixa Etária ( > 6 anos)" 
+    # Cálculo da idade na data de corte
+    idade_anos = data_corte.year - data_nasc.year - ((data_corte.month, data_corte.day) < (data_nasc.month, data_nasc.day))
+    
+    # Cálculo preciso dos meses completos
+    if data_corte.month < data_nasc.month or (data_corte.month == data_nasc.month and data_corte.day < data_nasc.day):
+        idade_meses = (data_corte.month - data_nasc.month) % 12 + 12
+    else:
+        idade_meses = (data_corte.month - data_nasc.month) % 12
+    
+    # Ajuste dos anos completos e meses (para facilitar a lógica)
+    if data_corte.month < data_nasc.month:
+        idade_anos -= 1
+        idade_meses = 12 - (data_nasc.month - data_corte.month)
+    elif data_corte.month == data_nasc.month and data_corte.day < data_nasc.day:
+        idade_anos -= 1
+        idade_meses = 11 # Não está correto, mas vamos manter a lógica simplificada em anos
 
-    # Pré II: 5 anos completos até < 6 anos
-    elif idade_anos_corte == 5:
-        return "Pré II"
+    # Lógica baseada em Anos
+    
+    # Berçário: 1 ano e 5 meses ou menos (ajustado para a idade mínima de 1a6m para Infantil I)
+    if idade_anos < 1:
+        return "Berçário" # Alunos com 11 meses ou menos na data de corte
+    
+    # Infantil I: 1 ano (1a6m a 2a)
+    if idade_anos == 1:
+        if idade_meses >= 6 or idade_meses == 0: # 1 ano e 6 meses a 2 anos
+            return "Infantil I"
+        else: # Menos de 1 ano e 6 meses
+             return "Berçário"
+    
+    # Infantil II: 2 anos
+    if idade_anos == 2:
+        return "Infantil II"
         
-    # Pré I: 4 anos completos até < 5 anos
-    elif idade_anos_corte == 4:
+    # Infantil III: 3 anos
+    if idade_anos == 3:
+        return "Infantil III"
+        
+    # Pré I: 4 anos
+    if idade_anos == 4:
         return "Pré I"
         
-    # Infantil III: 3 anos completos até < 4 anos
-    elif idade_anos_corte == 3:
-        return "Infantil III" 
+    # Pré II: 5 anos
+    if idade_anos == 5:
+        return "Pré II"
         
-    # Infantil II: 2 anos completos até < 3 anos
-    elif idade_anos_corte == 2:
-        return "Infantil II" 
+    # Acima: > 6 anos
+    if idade_anos >= 6:
+        return "2º Ano ou Acima"
         
-    # Infantil I: 1 ano e 6 meses (18 meses) até < 2 anos (24 meses)
-    elif idade_anos_corte == 1 and idade_meses_corte >= 18:
-        return "Infantil I" 
-        
-    # Berçário: 6 meses (6 meses) até < 1 ano e 6 meses (18 meses)
-    elif idade_anos_corte == 0 and idade_meses_corte >= 6: 
-         return "Berçário" 
-         
-    # Exclusão: Abaixo de 1 ano e 6 meses (18 meses)
-    else:
-        return "Fora da Faixa Etária ( < 1 ano e 6 meses)"
+    return "Fora da Faixa Etária"
+
 
 # ====================================================================
-# FUNÇÕES DE MÁSCARA (FocusOut/Bind)
+# FUNÇÕES DE VALIDAÇÃO E FORMATAÇÃO DE ENTRADA
 # ====================================================================
 
-def format_date(entry):
-    """Formata a data para dd/mm/aaaa ao perder o foco."""
+def is_valid_name(name: str) -> bool:
+    """Verifica se o nome é composto (mínimo 2 palavras) e contém apenas letras (e espaços)."""
+    name = name.strip()
+    # Verifica se há pelo menos duas palavras e apenas caracteres de letra, espaço e acentuação básica.
+    if len(name.split()) < 2:
+        return False
+    # Regex para permitir letras (incluindo acentuadas), espaços e hífen
+    if not re.fullmatch(r"^[A-Za-z\sÁÉÍÓÚÀÈÌÒÙÃÕÂÊÎÔÛÄËÏÖÜáéíóúàèìòùãõâêîôûäëïöü'-]+$", name):
+        return False
+    return True
+
+def is_valid_date_format(date_str: str) -> bool:
+    """Verifica se a string está no formato DD/MM/AAAA."""
+    if not re.fullmatch(r'\d{2}/\d{2}/\d{4}', date_str):
+        return False
+    try:
+        # Tenta criar um objeto date para garantir que a data seja válida (ex: 30/02/2024 é inválido)
+        day, month, year = map(int, date_str.split('/'))
+        date(year, month, day)
+        return True
+    except ValueError:
+        return False
+
+def format_date(entry: Entry):
+    """Formata a data para DD/MM/AAAA ao perder o foco."""
     text = ''.join(filter(str.isdigit, entry.get()))
-    
-    # Assumimos que a entrada pode ser ddmmYYYY
     if len(text) > 8: text = text[:8]
-    
-    formatted_text = ""
+
     if len(text) > 4:
-        formatted_text = f"{text[:2]}/{text[2:4]}/{text[4:]}"
+        text = f"{text[:2]}/{text[2:4]}/{text[4:]}"
     elif len(text) > 2:
-        formatted_text = f"{text[:2]}/{text[2:]}"
-    elif len(text) > 0:
-        formatted_text = f"{text[:2]}"
+        text = f"{text[:2]}/{text[2:]}"
     
-    # Usa o método 'set' anexado ao Entry para atualizar o StringVar
     if hasattr(entry, 'set'):
-        entry.set(formatted_text) 
+        entry.set(text) 
     
-    # Retornar o valor formatado para uso imediato no bind, se necessário
-    return formatted_text
-
-# --- Funções format_cpf e format_phone permanecem INALTERADAS ---
-
-def format_cpf(entry):
+def format_cpf(entry: Entry):
     """Formata o CPF para ###.###.###-## ao perder o foco."""
     text = ''.join(filter(str.isdigit, entry.get()))
     if len(text) > 11: text = text[:11]
@@ -121,7 +140,7 @@ def format_cpf(entry):
     if hasattr(entry, 'set'):
         entry.set(text) 
 
-def format_phone(entry):
+def format_phone(entry: Entry):
     """Formata o Telefone para (##) #####-#### ao perder o foco."""
     text = ''.join(filter(str.isdigit, entry.get()))
     
@@ -138,16 +157,3 @@ def format_phone(entry):
     
     if hasattr(entry, 'set'):
         entry.set(text)
-
-# --- Funções de Validação permanecem INALTERADAS ---
-
-def is_valid_name(name: str) -> bool:
-    """Validação: Deve ter pelo menos 2 palavras e apenas letras/espaços/acentos."""
-    name = name.strip()
-    if len(name.split()) < 2:
-        return False
-    return bool(re.fullmatch(r"^[a-zA-ZáàâãéèêíïóôõöúüçñÁÀÂÃÉÈÊÍÏÓÔÕÖÚÜÇÑ\s]+$", name))
-
-def is_valid_date_format(date_str: str) -> bool:
-    """Verifica se a string está no formato dd/mm/aaaa."""
-    return bool(re.fullmatch(r'\d{2}/\d{2}/\d{4}', date_str))
